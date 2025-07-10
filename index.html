@@ -917,17 +917,24 @@
             }
         }
     </style>
+    <!-- 外部JavaScriptファイル -->
+    <script src="js/storage-manager.js"></script>
+    <script src="js/premium-features.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Memory Fragments</h1>
             <p class="subtitle">Preserve Your Precious Moments</p>
+            <!-- プランバッジ表示 -->
+            <div id="planBadge" style="margin-top: 20px;"></div>
         </header>
 
         <div class="main-content">
             <div class="glass-card input-section">
                 <h2 style="margin-bottom: 24px; font-size: 1.5rem;">✨ 新しい記憶を記録</h2>
+                <!-- 使用状況バー -->
+                <div id="usageBar"></div>
                 <form id="memoryForm">
                     <div class="form-group">
                         <label for="memoryDate">📅 Date</label>
@@ -1003,6 +1010,10 @@
                             <span>📊</span>
                             <span>レポート</span>
                         </button>
+                        <button class="action-btn" style="background: var(--gradient-1);" onclick="premiumFeatures.showUpgradeModal()">
+                            <span>👑</span>
+                            <span>プラン</span>
+                        </button>
                     </div>
                 </div>
 
@@ -1045,7 +1056,9 @@
         // データ管理クラス
         class MemoryArchive {
             constructor() {
-                this.memories = this.loadMemories();
+                // ストレージマネージャーを初期化
+                this.storageManager = new StorageManager();
+                this.memories = this.storageManager.memories;
                 this.currentView = 'grid';
                 this.selectedMemories = new Set();
                 this.filteredMemories = [...this.memories];
@@ -1058,6 +1071,28 @@
                 this.displayMemories();
                 this.checkForMemoryReminders();
                 this.addParticles();
+                this.updateUI();
+            }
+
+            updateUI() {
+                // プランバッジを表示
+                const planBadge = document.getElementById('planBadge');
+                if (this.storageManager.currentPlan === 'premium') {
+                    planBadge.appendChild(premiumFeatures.showPremiumBadge());
+                }
+
+                // 使用状況バーを表示
+                const usageBar = document.getElementById('usageBar');
+                const stats = this.storageManager.getUsageStats();
+                usageBar.appendChild(premiumFeatures.createUsageBar(stats));
+
+                // ストレージ警告をチェック
+                const warning = this.storageManager.checkStorageWarning();
+                if (warning.show) {
+                    setTimeout(() => {
+                        this.showNotification(warning.message, warning.type);
+                    }, 1000);
+                }
             }
 
             addParticles() {
@@ -1216,19 +1251,37 @@
             }
 
             addMemory(memory) {
-                this.memories.unshift(memory);
-                this.saveMemories();
-                this.filterMemories();
-                this.resetForm();
-                this.showNotification('記憶を保存しました');
+                // ストレージマネージャーを使用して保存
+                const result = this.storageManager.saveMemory(memory);
+                
+                if (result.success) {
+                    this.memories = this.storageManager.memories;
+                    this.filterMemories();
+                    this.resetForm();
+                    this.showNotification('記憶を保存しました');
+                    this.updateUI();
+                } else {
+                    // 容量制限エラーの場合
+                    if (result.error === 'FREE_LIMIT_EXCEEDED') {
+                        this.showNotification(result.message, 'error');
+                        setTimeout(() => {
+                            premiumFeatures.showUpgradeModal('limit_reached');
+                        }, 500);
+                    } else {
+                        this.showNotification(result.message, 'error');
+                    }
+                }
             }
 
             deleteMemory(id) {
                 if (confirm('この記憶を削除してもよろしいですか？')) {
-                    this.memories = this.memories.filter(m => m.id !== id);
-                    this.saveMemories();
-                    this.filterMemories();
-                    this.showNotification('記憶を削除しました');
+                    const success = this.storageManager.deleteMemory(id);
+                    if (success) {
+                        this.memories = this.storageManager.memories;
+                        this.filterMemories();
+                        this.showNotification('記憶を削除しました');
+                        this.updateUI();
+                    }
                 }
             }
 
@@ -1686,13 +1739,14 @@ Generated: ${new Date().toLocaleDateString('ja-JP')}
                     .replace(/\n/g, "<br>");
             }
 
+            // ストレージマネージャーが管理するため、これらのメソッドは使用しない
             saveMemories() {
-                localStorage.setItem('memories', JSON.stringify(this.memories));
+                // StorageManagerが管理
             }
 
             loadMemories() {
-                const saved = localStorage.getItem('memories');
-                return saved ? JSON.parse(saved) : [];
+                // StorageManagerが管理
+                return [];
             }
         }
 
